@@ -1,0 +1,206 @@
+#!/bin/bash
+
+dash="$1"
+file="$2"
+cmd="$3"
+other="$4"
+bdshrc="~/.bdshrc"
+bdsh="$BDSH_File"
+var="$5"
+var2="$6"
+tname=$(echo "$var2" | tr "," "\n")
+inputline=""
+nbr=${var2//[^,]}
+nbr=${#nbr}
+
+occ() {
+  sed -i "${inputline}s/ /\n/g" $file
+}
+
+create() {
+    case $other in
+        database) checkdata
+        ;;
+        table)
+        if grep -q "]," $file ; then
+          sed -i "s/],/&\n\t\""desc_${var}"\": [/" $file
+        else
+          sed -i "s/{/&\n\t\""desc_${var}"\": [/" $file
+        fi
+        tname=`echo ${tname} | tr '\n' "\\n"`
+        sed -i "s/}/${tname}\n&/g" $file
+        inputline=`grep -n "${tname}" $file | tail -n1 | cut -d: -f1`
+        occurence="$(occ)"
+        for (( i = 0; i < ${nbr}; i++ )); do
+          sed -i "${inputline}s/.*/\t\t\"&\",/" $file
+          ((++inputline))
+        done
+        sed -i "${inputline}s/.*/\t\t\"&\"\n\t],/" $file
+        ;;
+    esac
+}
+
+getcol() {
+    local desc="$(grep -Pzo "\"desc_$1\"\s*:\s*\[\K[^\]]*(?=\s*\])" | tr -d "\0")"
+    echo "$desc" | grep -Pzo "(?<=\")[^\"]*(?=\"\s*(?:,|$))" | tr "\0" "\n"
+}
+
+var() {
+    cat "$file" | tr -d "\r"
+}
+
+command() {
+    local db="$(var)"
+    case $cmd in
+        create) create
+        ;;
+        select)
+        ;;
+        describe)
+        echo "$db" | getcol $other
+        ;;
+        insert)
+        ;;
+    esac
+}
+
+checkconf() {
+    if [ -f $bdshrc]; then
+        if [ -s $bdshrc ]; then
+            echo "database already exist"
+        else
+            echo "{
+}" >> "$bdshrc"
+            cmd="$2"
+            other="$3"
+            command
+        fi
+    else
+        echo "can't find any database file."
+    fi
+}
+
+checkenv() {
+    if [ -f $bdsh ]; then
+        if [ -s $bdsh ]; then
+            echo "database already exist"
+        else
+            echo "{
+}" >> "$bdsh"
+            cmd="$2"
+            other="$3"
+            command
+        fi
+    else
+        checkconf
+    fi
+}
+
+checkdata() {
+if [ -f $file ]; then
+    if [ -s $file ]; then
+        echo "database already exist"
+    else
+        echo "{
+}" >> "$file"
+    fi
+fi
+}
+
+checkenv() {
+    if [ -f $bdshrc]; then
+        if [ -s $bdshrc ]; then
+            echo "database already exist"
+        else
+            echo "{
+}" >> "$bdshrc"
+            cmd="$2"
+            other="$3"
+            command
+        fi
+    else
+        echo "can't find any database file."
+    fi
+}
+
+help() {
+    echo "Usage: $0 [OPTION]... [COMMAND] [REQUEST]
+OPTION:
+  -h				display usage
+  -f FILE			json database file
+  -j				json formated output for select command
+COMMAND and REQUEST:
+  create		create database files and tables
+			Exemple:
+			   ./bdsh -f file.json create database
+			   ./bdsh -f file.json create table user id,firstname,lastname
+			   ./bdsh -f file.json create table age id,age
+  drop			drop database files and tables
+			Exemple:
+			   ./bdsh -f file.json drop database
+			   ./bdsh -f file.json drop table user
+			   ./bdsh -f file.json drop table age
+  show			show the list of existing tables
+			Exemple:
+			   ./bdsh -f file.json show
+			   user
+			   age
+  describe		describe table structure
+			Exemple:
+			   ./bdsh -f file.json describe user
+			   id
+			   firstname
+			   lastname
+  select		display data from database
+			Exemple:
+			   ./bdsh -f file.json select user firstname,lastname
+			   firstname    | lastname
+			   -------------------------
+			   John         | SMITH
+			   Robert John  | WILLIAMS
+			   Lisa         | SIMPSON
+			                | SMITH
+			   Laura        | SMITH
+			                |
+			   ./bdsh -f file.json select user lastname,firstname order
+			   lastname   | firstname
+			   -------------------------
+			             |
+			   SIMPSON   | Lisa
+			   SMITH     |
+			   SMITH     | John
+			   SMITH     | Laura
+			   WILLIAMS  | Robert John
+			   ./bdsh -f file.json select user firstname,lastname where lastname=SMITH
+			   firstname    | lastname
+			   -------------------------
+			   John         | SMITH
+			                | SMITH
+			   Laura        | SMITH
+			   ./bdsh -f file.json select user firstname,lastname where lastname=SMITH order
+			   firstname    | lastname
+			   -------------------------
+			                | SMITH
+			   John         | SMITH
+			   Laura        | SMITH
+  insert		insert data in database
+			Exemple:
+			   ./bdsh -f file.json insert user id=1,firstname=John,lastname=SMITH
+			   ./bdsh -f file.json insert user id=4,firstname=Robert John,lastname=WILLIAMS
+			   ./bdsh -f file.json insert user id=2,firstname=Lisa,lastname=SIMPSON
+			   ./bdsh -f file.json insert user id=10,lastname=SMITH
+			   ./bdsh -f file.json insert user firstname=Laura,lastname=SMITH
+			   ./bdsh -f file.json insert user id=9
+			   ./bdsh -f file.json insert age id=1,age=42"
+}
+
+case $dash in
+    -h) help
+    ;;
+    -f) command
+    ;;
+    -j) checkenv
+    ;;
+    *) echo "bad arguments"
+    ;;
+esac
